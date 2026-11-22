@@ -24,8 +24,10 @@ for crate in pingora-proxy pingora-core; do
   chmod -R u+w "$out/$crate"
 done
 
-# Patches 0001 to 0003 are for pingora-proxy, 0004 is for pingora-core.
+# Patches 0001 to 0003 are for pingora-proxy, 0004 and 0005 are for pingora-core.
 for patch in "$root"/patches/000[123]-*.patch; do
   patch -p1 --directory="$out/pingora-proxy" --input="$patch"
 done
-patch -p1 --directory="$out/pingora-core" --input="$root/patches/0004-rustls-server-cert-verifier.patch"
+for patch in "$root"/patches/000[45]-*.patch; do
+  patch -p1 --directory="$out/pingora-core" --input="$patch"
+done

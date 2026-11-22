@@ -18,7 +18,7 @@ copy() {
 for patch in "$root"/patches/*.patch; do
   name=$(basename "$patch")
   case $name in
-    0004-*) crate=pingora-core ;;
+    0004-* | 0005-*) crate=pingora-core ;;
     *) crate=pingora-proxy ;;
   esac
   copy "$crate" "alone-$name"
@@ -32,5 +32,7 @@ echo "== 0001, 0002, 0003 in order, on a fresh pingora-proxy-$version"
 for patch in "$root"/patches/000[123]-*.patch; do
   patch -p1 --directory="$work/all-proxy" --input="$patch"
 done
-echo "== 0004, on a fresh pingora-core-$version"
-patch -p1 --directory="$work/all-core" --input="$root/patches/0004-rustls-server-cert-verifier.patch"
+echo "== 0004 and 0005 in order, on a fresh pingora-core-$version"
+for patch in "$root"/patches/000[45]-*.patch; do
+  patch -p1 --directory="$work/all-core" --input="$patch"
+done

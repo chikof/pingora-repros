@@ -4,8 +4,8 @@
 #   scripts/run.sh stock [problem]     against pingora-proxy and pingora-core 0.9.1 from crates.io
 #   scripts/run.sh patched [problem]   against copies with patches/*.patch applied
 #
-# problem is 1 to 4 or the test file name: upgrade_101_race, tunnel_timeout,
-# h2_trailers_end_of_stream, rustls_peer_verifier. Without it all four run.
+# problem is 1 to 5 or the test file name: upgrade_101_race, tunnel_timeout,
+# h2_trailers_end_of_stream, rustls_peer_verifier, runtime_group. Without it all five run.
 # Extra arguments go to the test binary, e.g. `scripts/run.sh stock 1 -- --nocapture`.
 set -euo pipefail
 
@@ -19,11 +19,11 @@ mode=${1:-}
 }
 shift
 
-tests=(upgrade_101_race tunnel_timeout h2_trailers_end_of_stream rustls_peer_verifier)
+tests=(upgrade_101_race tunnel_timeout h2_trailers_end_of_stream rustls_peer_verifier runtime_group)
 select=()
 if [[ ${1:-} != "" && $1 != -- ]]; then
   case $1 in
-    [1-4]) select=(--test "${tests[$(($1 - 1))]}") ;;
+    [1-5]) select=(--test "${tests[$(($1 - 1))]}") ;;
     *) select=(--test "$1") ;;
   esac
   shift

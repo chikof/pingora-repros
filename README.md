@@ -1,8 +1,8 @@
 # pingora-repros
 
-Four problems in Pingora 0.9.1 that I hit in a reverse proxy built on it, each with a test that fails on the stock crates and passes with a patch.
+Five problems in Pingora 0.9.1 that I hit in a reverse proxy built on it, each with a test that fails on the stock crates and passes with a patch.
 
-I carry these four patches as local copies of `pingora-proxy` and `pingora-core`. This repo pulls them out of my proxy so they can be run and read on their own.
+I carry these five patches as local copies of `pingora-proxy` and `pingora-core`. This repo pulls them out of my proxy so they can be run and read on their own.
 
 Status against `cloudflare/pingora` main at [`3f87e92`](https://github.com/cloudflare/pingora/commit/3f87e92), 67 commits after 0.9.1:
 
@@ -12,6 +12,7 @@ Status against `cloudflare/pingora` main at [`3f87e92`](https://github.com/cloud
 | 2 | No way to set an upgraded tunnel's read timeout or end it | Reported as [#1139]. Not fixed on main. |
 | 3 | An HTTP/2 response that ends in trailers never gives `response_body_filter` its end of stream | Reported as [#1140]. Not fixed on main. |
 | 4 | No per-peer server certificate verifier for rustls | Reported as [#1141]. Not fixed for rustls. Main's `cb16c87` adds `PeerOptions::upstream_tls_verify_callback`, for the OpenSSL and BoringSSL backends only. |
+| 5 | Services cannot share a runtime, so a proxy with one application per listener runs one worker pool per listener | Not reported yet. |
 
 ## Running
 
@@ -21,16 +22,16 @@ You need Rust 1.99.0 (`rust-toolchain.toml`) and cmake, because `libz-ng-sys` bu
 devenv shell
 scripts/run.sh stock        # pingora-proxy and pingora-core 0.9.1 from crates.io
 scripts/run.sh patched      # the same crates with patches/*.patch applied
-scripts/run.sh stock 3      # one problem: 1 to 4, or the test file name
+scripts/run.sh stock 3      # one problem: 1 to 5, or the test file name
 ```
 
 Without Nix, run the same scripts from a checkout; they only need cargo, patch and bash.
 
-`patched` copies the two crates from the cargo registry into `target/patched-src/`, applies the patches and points cargo at the copies with `--config 'patch.crates-io...'`. `Cargo.toml` is not edited. `Cargo.lock` is put back when the run ends. `scripts/check-patches.sh` applies every patch alone, and all four in order, to fresh registry copies.
+`patched` copies the two crates from the cargo registry into `target/patched-src/`, applies the patches and points cargo at the copies with `--config 'patch.crates-io...'`. `Cargo.toml` is not edited. `Cargo.lock` is put back when the run ends. `scripts/check-patches.sh` applies every patch alone, and each crate's patches in order, to fresh registry copies.
 
-Each test starts a Pingora proxy inside the test process on `127.0.0.1`, plus a small upstream and a raw-socket or `h2` client. One test file runs alone: `cargo test --test tunnel_timeout`.
+Each test starts a Pingora server inside the test process on `127.0.0.1`. Most add a small upstream and a raw-socket or `h2` client. One test file runs alone: `cargo test --test tunnel_timeout`.
 
-Where stock Pingora has no API for the fix (problems 2 and 4 and the hook of 3), the test uses the new API only under `--features patched`. The stock build runs the same scenario with the best stock configuration and fails on the symptom.
+Where stock Pingora has no API for the fix (problems 2, 4 and 5 and the hook of 3), the test uses the new API only under `--features patched`. The stock build runs the same scenario with the best stock configuration and fails on the symptom.
 
 Results on this repo's lockfile, Linux x86_64, debug build:
 
@@ -40,6 +41,7 @@ Results on this repo's lockfile, Linux x86_64, debug build:
 | `tunnel_timeout` | fails: `the idle tunnel was still open after 5s; its read timeout stayed at 30s` | passes (2 tests) |
 | `h2_trailers_end_of_stream` | fails: `the filter never saw end_of_stream, so it never released the body` (`left: ""`, `right: "hello world"`) | passes |
 | `rustls_peer_verifier` | fails: `the upstream with spiffe://example.test/b was accepted for spiffe://example.test/a` (`left: 200`, `right: 502`) | passes |
+| `runtime_group` | fails: `3 services with threads = 3 started 9 worker threads (["rg-a", "rg-a", "rg-a", "rg-b", "rg-b", "rg-b", "rg-c", "rg-c", "rg-c"]); each service got its own pool, and only 3 were wanted` | passes |
 
 ## 1. An upgraded tunnel is closed when the 101 wins a race
 
@@ -84,6 +86,20 @@ The patch (`patches/0004-rustls-server-cert-verifier.patch`) adds `PeerOptions::
 `tests/rustls_peer_verifier.rs` has two TLS upstreams whose certificates come from one CA and carry only the URI SANs `spiffe://example.test/a` and `.../b`. The proxy wants `a` for both. On stock the best configuration is chain-only, which accepts `b` as well. With the patch a verifier checks the chain and the URI SAN, and `b` gets a 502.
 
 Upstream: reported as [#1141]. Not fixed for rustls. Main's `cb16c87` adds `PeerOptions::upstream_tls_verify_callback` for the OpenSSL and BoringSSL backends only.
+
+## 5. Services cannot share a runtime
+
+`Server::run_forever` builds one tokio runtime for each service, with `ServerConf.threads` workers (`server/mod.rs:405-411` in `run_service`, called from `:727-775`). A service can set its own `threads`, but nothing lets two services use the same runtime. A proxy that needs one application per listener, each with its own name, policy and PROXY protocol gate, ends up with one worker pool per listener.
+
+I measured the cost in my proxy, on 4 pinned CPUs, with an `http` and an `https` listener. In 5 of 7 fresh process starts, the process made 2 to 3 times as many voluntary context switches per request and ran about 12% slower than the same process with only the `http` listener: a median of 203.9k against 232.8k requests per second at 64 connections. With both listeners on one shared runtime, every start was fast: 233.9k against 234.2k. These numbers are from my proxy, not from this repo's tests.
+
+The alternative is one service with many listeners. Then the application has to find the listener of each connection, and `HttpServerApp::h2_options` and `server_options` do not receive the connection.
+
+The patch (`patches/0005-service-runtime-group.patch`) adds `Service::runtime_group(&self) -> Option<&str>` to the `Service` and `ServiceWithDependents` traits, and a public `runtime_group` field on the listening `Service`. Services that return the same name share one runtime. The runtime takes its thread count, name and options from the first of them to start. The default `None` keeps one runtime per service.
+
+`tests/runtime_group.rs` starts a server with three listening services and `threads = 3`, then counts the threads named `rg*` in `/proc/self/task/*/comm`. Pingora names a runtime's threads after the runtime. On stock Pingora there are 9, three pools of three. With the patch the services name the group `rg` and share one pool of 3. Tokio's blocking pool threads carry the same name, so the test accepts a count from 3 up to 5. It reads `/proc`, so it runs on Linux only.
+
+Upstream: not reported yet.
 
 ## License
 

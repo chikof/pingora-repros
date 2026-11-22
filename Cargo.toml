@@ -9,7 +9,7 @@ edition = "2024"
 license = "Apache-2.0 OR MIT"
 rust-version = "1.99"
 publish = false
-description = "Reproductions of four Pingora 0.9.1 problems, with the patches that fix them"
+description = "Reproductions of five Pingora 0.9.1 problems, with the patches that fix them"
 
 [features]
 # Tests that use APIs the patches add. They do not compile against stock Pingora.
