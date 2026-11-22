@@ -9,9 +9,9 @@ Status against `cloudflare/pingora` main at [`3f87e92`](https://github.com/cloud
 | # | Problem | Upstream |
 |---|---|---|
 | 1 | A `101` read before the request's end-of-body task closes an upgraded tunnel | Reported as [#946] and [#1050]. Open PRs: [#947], [#1051], [#1016]. |
-| 2 | No way to set an upgraded tunnel's read timeout or end it | Not reported, not fixed on main. |
-| 3 | An HTTP/2 response that ends in trailers never gives `response_body_filter` its end of stream | Not reported, not fixed on main. |
-| 4 | No per-peer server certificate verifier for rustls | Not fixed for rustls. Main's `cb16c87` adds `PeerOptions::upstream_tls_verify_callback`, for the OpenSSL and BoringSSL backends only. |
+| 2 | No way to set an upgraded tunnel's read timeout or end it | Reported as [#1139]. Not fixed on main. |
+| 3 | An HTTP/2 response that ends in trailers never gives `response_body_filter` its end of stream | Reported as [#1140]. Not fixed on main. |
+| 4 | No per-peer server certificate verifier for rustls | Reported as [#1141]. Not fixed for rustls. Main's `cb16c87` adds `PeerOptions::upstream_tls_verify_callback`, for the OpenSSL and BoringSSL backends only. |
 
 ## Running
 
@@ -63,7 +63,7 @@ The patch (`patches/0002-proxy-tunnel-hook.patch`) adds `ProxyHttp::tunnel(&self
 
 `tests/tunnel_timeout.rs` sets the peer's `read_timeout` to 30s and expects an idle tunnel to close within 5s. On stock the tunnel is still open after 5s. With the patch the hook sets 500ms and the tunnel closes. A second test, built only with `--features patched`, cancels an open tunnel.
 
-Upstream: not reported, not fixed on main.
+Upstream: reported as [#1139], not fixed on main.
 
 ## 3. HTTP/2 trailers hide the end of the body
 
@@ -73,7 +73,7 @@ The patch (`patches/0003-h2-response-body-before-trailers.patch`) adds `ProxyHtt
 
 `tests/h2_trailers_end_of_stream.rs` has an `h2c` upstream that sends two DATA frames and trailers. The proxy's filter holds the body until `end_of_stream`. On stock the client gets an empty body. With the patch the hook releases `hello world`.
 
-Upstream: not reported, not fixed on main.
+Upstream: reported as [#1140], not fixed on main.
 
 ## 4. rustls peers cannot bring their own certificate verifier
 
@@ -83,7 +83,7 @@ The patch (`patches/0004-rustls-server-cert-verifier.patch`) adds `PeerOptions::
 
 `tests/rustls_peer_verifier.rs` has two TLS upstreams whose certificates come from one CA and carry only the URI SANs `spiffe://example.test/a` and `.../b`. The proxy wants `a` for both. On stock the best configuration is chain-only, which accepts `b` as well. With the patch a verifier checks the chain and the URI SAN, and `b` gets a 502.
 
-Upstream: not fixed for rustls. Main's `cb16c87` adds `PeerOptions::upstream_tls_verify_callback` for the OpenSSL and BoringSSL backends only.
+Upstream: reported as [#1141]. Not fixed for rustls. Main's `cb16c87` adds `PeerOptions::upstream_tls_verify_callback` for the OpenSSL and BoringSSL backends only.
 
 ## License
 
@@ -94,3 +94,6 @@ The tests, scripts and docs are `Apache-2.0 OR MIT`. `patches/` is Apache-2.0, C
 [#1016]: https://github.com/cloudflare/pingora/pull/1016
 [#1050]: https://github.com/cloudflare/pingora/issues/1050
 [#1051]: https://github.com/cloudflare/pingora/pull/1051
+[#1139]: https://github.com/cloudflare/pingora/issues/1139
+[#1140]: https://github.com/cloudflare/pingora/issues/1140
+[#1141]: https://github.com/cloudflare/pingora/issues/1141
