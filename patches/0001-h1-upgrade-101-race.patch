@@ -1,0 +1,24 @@
+--- a/src/proxy_h1.rs
++++ b/src/proxy_h1.rs
+@@ -324,12 +324,20 @@
+                 },
+ 
+                 body = rx.recv(), if !request_done => {
++                    // The downstream queues the end of the original request body
++                    // (a plain `Body`) when it starts, so it can arrive after the 101 was read.
++                    // Only an `UpgradedBody` (or a closed pipe) ends an upgraded connection.
++                    let pre_upgrade_end = matches!(body, Some(HttpTask::Body(..)));
+                     match send_body_to1(client_session, body).await {
+                         Ok(send_done) => {
+                             request_done = send_done;
+                             // An upgraded request is terminated when either side is done
+                             if request_done && client_session.was_upgraded() {
+-                                response_done = true;
++                                if pre_upgrade_end {
++                                    request_done = false;
++                                } else {
++                                    response_done = true;
++                                }
+                             }
+                         },
+                         Err(e) => {

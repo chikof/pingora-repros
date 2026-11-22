@@ -1,0 +1,51 @@
+--- a/src/connectors/tls/rustls/mod.rs
++++ b/src/connectors/tls/rustls/mod.rs
+@@ -257,6 +257,20 @@
+         }
+     }
+ 
++    // A verifier the peer brings replaces whatever was chosen above.
++    if let Some(verifier) = peer
++        .get_peer_options()
++        .and_then(|options| options.server_cert_verifier.as_ref())
++    {
++        let mut custom = updated_config_opt
++            .take()
++            .unwrap_or_else(|| RusTlsClientConfig::clone(config));
++        custom
++            .dangerous()
++            .set_certificate_verifier(Arc::clone(verifier));
++        updated_config_opt = Some(custom);
++    }
++
+     // TODO: curve setup from peer
+     // - second key share from peer, currently only used in boringssl with PQ features
+ 
+--- a/src/upstreams/peer.rs
++++ b/src/upstreams/peer.rs
+@@ -567,6 +567,16 @@
+     #[cfg(feature = "openssl_derived")]
+     #[derivative(Debug = "ignore")]
+     pub upstream_tls_handshake_complete_hook: Option<HandshakeCompleteHook>,
++    /// Replaces the server certificate verification of a rustls TLS connection to this peer.
++    ///
++    /// SPIFFE servers are identified by a URI SAN, which rustls'
++    /// default verifier does not check. The verifier is the only judge of the server
++    /// certificate: `verify_cert` and `verify_hostname` are not consulted when it is set. The
++    /// caller must put what the verifier decides on into the peer's `group_key`, since the reuse
++    /// hash does not cover it.
++    #[cfg(feature = "rustls")]
++    #[derivative(Debug = "ignore")]
++    pub server_cert_verifier: Option<Arc<dyn pingora_rustls::ServerCertVerifier>>,
+ }
+ 
+ impl PeerOptions {
+@@ -611,6 +621,8 @@
+             proxy_digest_user_data_hook: None,
+             #[cfg(feature = "openssl_derived")]
+             upstream_tls_handshake_complete_hook: None,
++            #[cfg(feature = "rustls")]
++            server_cert_verifier: None,
+         }
+     }
+ 
