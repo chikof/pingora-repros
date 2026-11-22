@@ -12,7 +12,7 @@ Status against `cloudflare/pingora` main at [`3f87e92`](https://github.com/cloud
 | 2 | No way to set an upgraded tunnel's read timeout or end it | Reported as [#1139]. Not fixed on main. |
 | 3 | An HTTP/2 response that ends in trailers never gives `response_body_filter` its end of stream | Reported as [#1140]. Not fixed on main. |
 | 4 | No per-peer server certificate verifier for rustls | Reported as [#1141]. Not fixed for rustls. Main's `cb16c87` adds `PeerOptions::upstream_tls_verify_callback`, for the OpenSSL and BoringSSL backends only. |
-| 5 | Services cannot share a runtime, so a proxy with one application per listener runs one worker pool per listener | Not reported yet. |
+| 5 | Services cannot share a runtime, so a proxy with one application per listener runs one worker pool per listener | Reported as [#1144]. Not fixed on main. |
 
 ## Running
 
@@ -99,7 +99,7 @@ The patch (`patches/0005-service-runtime-group.patch`) adds `Service::runtime_gr
 
 `tests/runtime_group.rs` starts a server with three listening services and `threads = 3`, then counts the threads named `rg*` in `/proc/self/task/*/comm`. Pingora names a runtime's threads after the runtime. On stock Pingora there are 9, three pools of three. With the patch the services name the group `rg` and share one pool of 3. Tokio's blocking pool threads carry the same name, so the test accepts a count from 3 up to 5. It reads `/proc`, so it runs on Linux only.
 
-Upstream: not reported yet.
+Upstream: reported as [#1144], not fixed on main.
 
 ## License
 
@@ -113,3 +113,4 @@ The tests, scripts and docs are `Apache-2.0 OR MIT`. `patches/` is Apache-2.0, C
 [#1139]: https://github.com/cloudflare/pingora/issues/1139
 [#1140]: https://github.com/cloudflare/pingora/issues/1140
 [#1141]: https://github.com/cloudflare/pingora/issues/1141
+[#1144]: https://github.com/cloudflare/pingora/issues/1144
