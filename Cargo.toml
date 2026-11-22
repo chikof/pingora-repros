@@ -1,0 +1,29 @@
+[workspace]
+members = ["."]
+resolver = "3"
+
+[package]
+name = "repros"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+rust-version = "1.99"
+publish = false
+description = "Reproductions of four Pingora 0.9.1 problems, with the patches that fix them"
+
+[features]
+# Tests that use APIs the patches add. They do not compile against stock Pingora.
+patched = []
+
+[dev-dependencies]
+async-trait = "=0.1.92"
+bytes = "=1.12.2"
+h2 = "=0.4.20"
+http = "=1.5.0"
+pingora-core = { version = "=0.9.1", default-features = false, features = ["rustls"] }
+pingora-proxy = { version = "=0.9.1", default-features = false, features = ["rustls"] }
+rcgen = { version = "=0.14.10", default-features = false, features = ["ring", "pem"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+tokio = { version = "=1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
+x509-parser = { version = "=0.18.1", default-features = false }

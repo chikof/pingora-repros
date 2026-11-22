@@ -1,0 +1,106 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -99,7 +99,7 @@
+ 
+ pub use proxy_cache::range_filter::{range_header_filter, MultiRangeInfo, RangeType};
+ pub use proxy_purge::PurgeStatus;
+-pub use proxy_trait::{FailToProxy, ProxyHttp, ProxyWarnLogContext};
++pub use proxy_trait::{FailToProxy, ProxyHttp, ProxyWarnLogContext, Tunnel};
+ 
+ pub mod prelude {
+     pub use crate::{http_proxy, http_proxy_service, ProxyHttp, ProxyWarnLogContext, Session};
+--- a/src/proxy_h1.rs
++++ b/src/proxy_h1.rs
+@@ -114,6 +114,12 @@
+         }
+ 
+         session.set_upstream_h1_upgrade_request_status(is_h1_upgrade_req(&req));
++        // The limits of an upgraded tunnel, if this request becomes one.
++        let tunnel = if is_h1_upgrade_req(&req) {
++            self.inner.tunnel(session, ctx)
++        } else {
++            None
++        };
+ 
+         session.upstream_compression.request_filter(&req);
+ 
+@@ -159,7 +165,7 @@
+                 &mut downstream_custom_message_reader,
+                 pipe_state.clone(),
+             ),
+-            self.proxy_handle_upstream(client_session, tx_upstream, rx_downstream, pipe_state),
++            self.proxy_handle_upstream(client_session, tx_upstream, rx_downstream, pipe_state, tunnel),
+         );
+ 
+         if let Some(custom_session) = session.downstream_session.as_custom_mut() {
+@@ -251,6 +257,7 @@
+         tx: mpsc::Sender<HttpTask>,
+         mut rx: mpsc::Receiver<HttpTask>,
+         pipe_state: Arc<AtomicU8>,
++        tunnel: Option<Tunnel>,
+     ) -> Result<bool>
+     where
+         SV: ProxyHttp + Send + Sync,
+@@ -272,6 +279,10 @@
+                             if !upgraded && client_session.was_upgraded() {
+                                 // upgrade can only happen once
+                                 upgraded = true;
++                                // The tunnel's own read timeout from now on.
++                                if let Some(tunnel) = &tunnel {
++                                    client_session.read_timeout = tunnel.read_timeout;
++                                }
+                                 if send_error.is_none() {
+                                     // continue receiving from downstream after body mode change
+                                     request_done = false;
+@@ -349,6 +360,19 @@
+                     }
+                 },
+ 
++                // The tunnel's lifetime or removal timer fired.
++                _ = async {
++                    match &tunnel {
++                        Some(tunnel) => tunnel.cancel.notified().await,
++                        None => std::future::pending().await,
++                    }
++                }, if upgraded && tunnel.is_some() => {
++                    let _ = tx.send(HttpTask::Failed(
++                        Error::explain(pingora_error::ErrorType::Custom("TunnelLimit"), "tunnel ended by its limit").into_up()
++                    )).await;
++                    return Ok(false);
++                },
++
+                 else => {
+                     // this shouldn't be reached as the while loop would already exit
+                     break;
+--- a/src/proxy_trait.rs
++++ b/src/proxy_trait.rs
+@@ -708,6 +708,14 @@
+         Ok(())
+     }
+ 
++    /// The limits of the connection if this HTTP/1 upstream request
++    /// turns into an upgraded tunnel. Called once per upgrade request, after
++    /// `upstream_request_filter` and before the request is written. `None` (the default) keeps
++    /// Pingora's behaviour: the upstream read timeout stays the peer's `read_timeout`.
++    fn tunnel(&self, _session: &Session, _ctx: &mut Self::CTX) -> Option<Tunnel> {
++        None
++    }
++
+     /// This callback is invoked every time request related error log needs to be generated
+     ///
+     /// Users can define what is important to be written about this request via the returned string.
+@@ -755,3 +763,14 @@
+     pub error_code: u16,
+     pub can_reuse_downstream: bool,
+ }
++
++/// What [`ProxyHttp::tunnel`] returns.
++#[derive(Debug, Clone)]
++pub struct Tunnel {
++    /// The upstream read timeout once the upgrade succeeded (replacing the peer's
++    /// `read_timeout`, which still covers the wait for the response head); `None` is no timeout.
++    pub read_timeout: Option<Duration>,
++    /// `notify_one` ends the upgraded connection: the upstream half stops and the client gets
++    /// a failed upstream. A notification before the upgrade is kept and acts at the upgrade.
++    pub cancel: std::sync::Arc<tokio::sync::Notify>,
++}
