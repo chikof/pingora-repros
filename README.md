@@ -41,7 +41,7 @@ Results on this repo's lockfile, Linux x86_64, debug build:
 | `tunnel_timeout` | fails: `the idle tunnel was still open after 5s; its read timeout stayed at 30s` | passes (2 tests) |
 | `h2_trailers_end_of_stream` | fails: `the filter never saw end_of_stream, so it never released the body` (`left: ""`, `right: "hello world"`) | passes |
 | `rustls_peer_verifier` | fails: `the upstream with spiffe://example.test/b was accepted for spiffe://example.test/a` (`left: 200`, `right: 502`) | passes |
-| `runtime_group` | fails: `3 services with threads = 3 started 9 worker threads (["rg-a", "rg-a", "rg-a", "rg-b", "rg-b", "rg-b", "rg-c", "rg-c", "rg-c"]); each service got its own pool, and only 3 were wanted` | passes |
+| `runtime_group` | fails: `4 services with threads = 3 started 12 worker threads (["rg-a", "rg-a", "rg-a", "rg-b", "rg-b", "rg-b", "rg-bg", "rg-bg", "rg-bg", "rg-c", "rg-c", "rg-c"]); each service got its own pool, and only 3 were wanted` | passes |
 
 ## 1. An upgraded tunnel is closed when the 101 wins a race
 
@@ -95,9 +95,9 @@ I measured the cost in my proxy, on 4 pinned CPUs, with an `http` and an `https`
 
 The alternative is one service with many listeners. Then the application has to find the listener of each connection, and `HttpServerApp::h2_options` and `server_options` do not receive the connection.
 
-The patch (`patches/0005-service-runtime-group.patch`) adds `Service::runtime_group(&self) -> Option<&str>` to the `Service` and `ServiceWithDependents` traits, and a public `runtime_group` field on the listening `Service`. Services that return the same name share one runtime. The runtime takes its thread count, name and options from the first of them to start. The default `None` keeps one runtime per service.
+The patch (`patches/0005-service-runtime-group.patch`) adds `Service::runtime_group(&self) -> Option<&str>` to the `Service` and `ServiceWithDependents` traits, and a public `runtime_group` field on the listening `Service` and on `GenBackgroundService`, the type `background_service` returns, so a service that is not a listener can join a group too. Services that return the same name share one runtime. The runtime takes its thread count, name and options from the first of them to start. The default `None` keeps one runtime per service.
 
-`tests/runtime_group.rs` starts a server with three listening services and `threads = 3`, then counts the threads named `rg*` in `/proc/self/task/*/comm`. Pingora names a runtime's threads after the runtime. On stock Pingora there are 9, three pools of three. With the patch the services name the group `rg` and share one pool of 3. Tokio's blocking pool threads carry the same name, so the test accepts a count from 3 up to 5. It reads `/proc`, so it runs on Linux only.
+`tests/runtime_group.rs` starts a server with three listening services and one background service, all with `threads = 3`, then counts the threads named `rg*` in `/proc/self/task/*/comm`. Pingora names a runtime's threads after the runtime. On stock Pingora there are 12, four pools of three. With the patch every service names the group `rg` and they share one pool of 3. Tokio's blocking pool threads carry the same name, so the test accepts a count from 3 up to 5. It reads `/proc`, so it runs on Linux only.
 
 Upstream: reported as [#1144], not fixed on main.
 
