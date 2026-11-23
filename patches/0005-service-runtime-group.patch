@@ -101,6 +101,37 @@
          }
  
          // blocked on main loop so that it runs forever
+--- a/src/services/background.rs
++++ b/src/services/background.rs
+@@ -65,6 +65,9 @@
+     task: Arc<A>,
+     /// The number of threads. Default is 1
+     pub threads: Option<usize>,
++    /// The runtime group this service joins; see [`ServiceWithDependents::runtime_group`]. `None`
++    /// to run on a runtime of its own.
++    pub runtime_group: Option<String>,
+ }
+ 
+ impl<A> GenBackgroundService<A> {
+@@ -74,6 +77,7 @@
+             name,
+             task,
+             threads: Some(1),
++            runtime_group: None,
+         }
+     }
+ 
+@@ -109,6 +113,10 @@
+         self.threads
+     }
+ 
++    fn runtime_group(&self) -> Option<&str> {
++        self.runtime_group.as_deref()
++    }
++
+     fn listen_addresses(&self) -> Option<Vec<String>> {
+         Some(Vec::new())
+     }
 --- a/src/services/listening.rs
 +++ b/src/services/listening.rs
 @@ -50,6 +50,9 @@
